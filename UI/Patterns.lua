@@ -35,6 +35,7 @@ local selected
 local filter = { show = "all" }
 ---@type integer?
 local chosen
+local Render
 
 ---@return SkillUpProfession?
 local function Profession()
@@ -111,9 +112,10 @@ local function Click(profession, entry)
 	return function()
 		if IsShiftKeyDown() then
 			ns.QueueSet(profession, entry.recipeID)
-		else
-			ns.QueueCraft(entry.recipeID, ns.QueuedCount(entry.recipeID) + 1)
+			return
 		end
+		chosen = entry.recipeID
+		Render()
 	end
 end
 
@@ -141,7 +143,7 @@ local function Menu(profession, entry)
 	end
 end
 
-local function Render()
+function Render()
 	local profession = Profession()
 	page.List:Begin()
 	if not profession then
