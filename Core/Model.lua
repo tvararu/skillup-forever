@@ -331,6 +331,53 @@ function Model.CompletionChance(thresholds, from, to, skillUps, crafts)
 	return odds[crafts] or 0
 end
 
+-- The points `crafts` crafts gain from `from` with `confidence` certainty: the most points whose odds after that
+-- many crafts are at least that. A queued craft is made a fixed number of times, so its gain is read this way
+-- round rather than as the crafts a gain takes. Grey crafts gain nothing.
+---@param thresholds number[]
+---@param from number
+---@param crafts integer
+---@param skillUps integer?
+---@param confidence number? Defaults to Model.ROUTE_CONFIDENCE.
+---@return integer
+function Model.PointsFromCrafts(thresholds, from, crafts, skillUps, confidence)
+	local target = confidence or Model.ROUTE_CONFIDENCE
+	local room = thresholds[4] - from
+	if crafts <= 0 or room <= 0 then
+		return 0
+	end
+	local needed, chances, gains = CraftChances(thresholds, from, from + room, skillUps)
+	local odds, next_ = { [0] = 1 }, {}
+	for _ = 1, crafts do
+		for points in pairs(next_) do
+			next_[points] = nil
+		end
+		next_[needed] = odds[needed] or 0
+		for points = 0, needed - 1 do
+			local inHand = odds[points]
+			if inHand then
+				local chance = chances[points]
+				if chance then
+					local gained = gains[points]
+					next_[points] = (next_[points] or 0) + inHand * (1 - chance)
+					next_[points + gained] = (next_[points + gained] or 0) + inHand * chance
+				else
+					next_[points] = (next_[points] or 0) + inHand
+				end
+			end
+		end
+		odds, next_ = next_, odds
+	end
+	local atLeast = 0
+	for points = needed, 1, -1 do
+		atLeast = atLeast + (odds[points] or 0)
+		if atLeast >= target then
+			return points
+		end
+	end
+	return 0
+end
+
 -- The crafts that reach `to` from `from` with `confidence` certainty: the fewest crafts whose odds of every
 -- needed skill point are at least that. A route's own budgets are chosen jointly by Model.BudgetSegments;
 -- this is the single-leg count its ranking and the parts of a plan that are not the whole route use.
@@ -646,6 +693,13 @@ local function Planner(snapshot)
 	local buffs = snapshot.buffs or {}
 	local held = snapshot.held or {}
 	local stockCost = snapshot.stockCost
+	-- Recipes the player queued to craft a set number of times: each is placed once, where it is first learnable.
+	local queue = snapshot.queue or {}
+	---@type table<integer, SkillUpCandidate>
+	local queuedOf = {}
+	for _, entry in ipairs(queue) do
+		queuedOf[entry.recipeID] = entry.candidate
+	end
 	local base, pooled = {}, {}
 	local byID = {}
 	-- [recipe] = true when any of its reagents is one the bags or bank hold: only those are re-priced from
@@ -889,13 +943,16 @@ local function Planner(snapshot)
 			local recipeID = segment.recipeID
 			local t, cost, reagentCost = thresholds[recipeID], costOf[recipeID], reagentOf[recipeID]
 			local candidate = byID[recipeID]
-			if extra and extra.recipeID == recipeID then
+			if segment.fixed then
+				candidate = queuedOf[recipeID]
+				t, cost, reagentCost = candidate.thresholds, candidate.netCost, candidate.reagentCost
+			elseif extra and extra.recipeID == recipeID then
 				t, cost, reagentCost, candidate = extra.thresholds, extra.netCost, extra.reagentCost, extra
 			end
 			segment.thresholds = t
 			segment.cost = cost
 			segment.reagentCost = reagentCost
-			if not route.completion then
+			if not route.completion and not segment.fixed then
 				segment.crafts = Covered(t, segment.fromSkill, segment.toSkill, segment.skillUps)
 			end
 			if candidate and IsPooled(candidate) then
@@ -929,6 +986,9 @@ local function Planner(snapshot)
 			extra = nil
 		end
 		local route = { segments = {}, expectedCost = 0, reachedSkill = from, excluded = excluded }
+		if #queue > 0 then
+			route.queued = {}
+		end
 		local picked = {}
 		-- A copy of what the bags and bank hold when the route starts: every craft takes its reagents out, so
 		-- a later step sees only what is left. Each call starts from the same pool, so a training search's
@@ -936,7 +996,52 @@ local function Planner(snapshot)
 		local pool = CopyHeld()
 		stockQuotes = {}
 		local stock
+		for index, entry in ipairs(queue) do
+			---@diagnostic disable-next-line: need-check-nil
+			route.queued[index] = { recipeID = entry.recipeID, count = entry.count, placed = false }
+		end
+		-- Places every queued recipe learnable by the route's skill that is not on it yet, as a step of exactly its
+		-- queued crafts, which gains what those crafts gain from there. True when one was placed.
+		local function PlaceQueued()
+			local placedAny = false
+			for index, entry in ipairs(queue) do
+				local result = route.queued[index]
+				if not result.placed and entry.learnAt <= route.reachedSkill then
+					local skill = route.reachedSkill
+					local candidate = entry.candidate
+					local ups = math.max(candidate.skillUps or 1, 1)
+					local points = Model.PointsFromCrafts(candidate.thresholds, skill, entry.count, ups)
+					route.segments[#route.segments + 1] = {
+						recipeID = entry.recipeID,
+						fromSkill = skill,
+						toSkill = skill + points,
+						skillUps = candidate.skillUps,
+						crafts = entry.count,
+						fixed = true,
+					}
+					route.reachedSkill = skill + points
+					result.placed, result.atSkill, result.points = true, skill, points
+					if IsPooled(candidate) then
+						stockQuotes = {}
+						if candidate.stockSensitive and stockCost then
+							stock = stock or {}
+							stockCost(entry.recipeID, entry.count, pool, stock, true)
+						else
+							TakePool(candidate, entry.count, pool)
+						end
+					end
+					placedAny = true
+				end
+			end
+			return placedAny
+		end
 		while route.reachedSkill < target do
+			if PlaceQueued() then
+				-- The walk carries on from where the queued crafts left it.
+				if route.reachedSkill >= target then
+					break
+				end
+			end
 			local skill = route.reachedSkill
 			picked[#picked + 1] = skill
 			-- Recipes with no held reagent keep the list's static ranking; the others are priced from the pool
@@ -969,7 +1074,7 @@ local function Planner(snapshot)
 				break
 			end
 			local segment = route.segments[#route.segments]
-			if not segment or segment.recipeID ~= best.recipeID then
+			if not segment or segment.fixed or segment.recipeID ~= best.recipeID then
 				segment = { recipeID = best.recipeID, fromSkill = skill, toSkill = skill, skillUps = best.skillUps }
 				route.segments[#route.segments + 1] = segment
 			end
@@ -986,6 +1091,10 @@ local function Planner(snapshot)
 					TakePool(best, crafts, pool)
 				end
 			end
+		end
+		-- A recipe learnt exactly where the route ends is still crafted there.
+		if route.stopReason == nil then
+			PlaceQueued()
 		end
 		-- Each step carries the recipe's price and thresholds, and the crafts that cover it alone at the
 		-- route's confidence. The whole route's budgets are chosen together after the last route is picked,
@@ -1055,10 +1164,19 @@ end
 ---@param restockCost number?
 ---@return SkillUpRoute
 function Model.BudgetRoute(route, confidence, restockCost)
-	local budgets, completion = Model.BudgetSegments(route.segments, confidence, restockCost)
-	local cost = 0
-	for index, segment in ipairs(route.segments) do
+	-- A queued step is crafted its queued count, so only the others are budgeted.
+	local budgeted = {}
+	for _, segment in ipairs(route.segments) do
+		if not segment.fixed then
+			budgeted[#budgeted + 1] = segment
+		end
+	end
+	local budgets, completion = Model.BudgetSegments(budgeted, confidence, restockCost)
+	for index, segment in ipairs(budgeted) do
 		segment.crafts = budgets[index]
+	end
+	local cost = 0
+	for _, segment in ipairs(route.segments) do
 		cost = cost
 			+ (Model.RouteStepCost(segment.cost, segment.reagentCost, segment.crafts, Model.CRAFT_TIME_COST) or 0)
 	end
@@ -1161,6 +1279,19 @@ function Model.PlanWithTraining(snapshot, services)
 	end
 	local planner = Planner(snapshot)
 	local chosen = {}
+	-- A queued recipe the player hasn't learned is trained whatever it saves: the player asked to make it.
+	local queued = {}
+	for _, entry in ipairs(snapshot.queue or {}) do
+		queued[entry.recipeID] = true
+	end
+	for index = #remaining, 1, -1 do
+		local service = remaining[index]
+		if queued[service.recipeID] then
+			planner.Add(service)
+			chosen[service.recipeID] = service
+			table.remove(remaining, index)
+		end
+	end
 	while #remaining > 0 do
 		local best = Recommend(planner, remaining)
 		if not best then
