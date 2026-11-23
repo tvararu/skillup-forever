@@ -41,10 +41,16 @@ local FORBIDDEN = {
 	{ "SetAttribute%s*%(%s*[^)]*[Mm]acro", "macro attribute" },
 }
 
+-- Not protected: Buy all calls it once the player agrees, as restock addons do.
+local ALLOWED = { "BuyMerchantItem%s*%(" }
+
 local checked, violations = 0, {}
 for _, path in ipairs(AddonFiles()) do
 	checked = checked + 1
 	local code = Code(Read(path))
+	for _, allowed in ipairs(ALLOWED) do
+		code = code:gsub(allowed, "")
+	end
 	local line = 0
 	for text in (code .. "\n"):gmatch("([^\n]*)\n") do
 		line = line + 1

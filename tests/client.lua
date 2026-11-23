@@ -847,6 +847,7 @@ function Client.load(options)
 		tab:SetID(index)
 		tab:SetText(index == 1 and "Merchant" or "Buyback")
 	end
+	G.MerchantFrameTab2:SetPoint("LEFT", G.MerchantFrameTab1, "RIGHT", 3, 0)
 	for index = 1, 12 do
 		NewFrame("MerchantItem" .. index, G.MerchantFrame)
 	end

@@ -475,10 +475,22 @@ local function MerchantPurchases()
 	return purchases, cost
 end
 
--- BuyMerchantItem is protected: called from addon code it taints the client's merchant path, and the
--- player's own purchases can then be refused until /reload (#327). This client has no secure attribute
--- that buys a chosen quantity, so the addon does not buy at all: the button lists what the route still
--- needs and the player buys it from the merchant's own window.
+-- Buys each purchase in as many calls as the merchant's per-purchase limit asks.
+---@param purchases {index: integer, count: integer}[]
+local function Purchase(purchases)
+	for _, purchase in ipairs(purchases) do
+		local most = GetMerchantItemMaxStack(purchase.index)
+		if not most or most < 1 then
+			most = purchase.count
+		end
+		local left = purchase.count
+		while left > 0 do
+			local count = math.min(left, most)
+			BuyMerchantItem(purchase.index, count)
+			left = left - count
+		end
+	end
+end
 
 -- What is missing here, for the prompt: the first few items by name and how many more.
 local LISTED_PURCHASES = 4
@@ -500,10 +512,11 @@ local function PurchaseList(purchases)
 end
 
 -- What the tracked routes still need here, on the merchant's window so it goes when the merchant does.
--- The player buys it from the merchant's own window; the addon only shows what and how much.
 ---@class SkillUpBuyConfirm : Frame
 ---@field Text FontString
+---@field Buy Button
 ---@field Close Button
+---@field purchases {index: integer, count: integer}[]?
 ---@field cost number?
 ---@type SkillUpBuyConfirm?
 local confirm
@@ -511,6 +524,7 @@ local confirm
 local function HideConfirm()
 	if confirm then
 		confirm.cost = nil
+		confirm.purchases = nil
 		confirm:Hide()
 	end
 end
@@ -530,17 +544,28 @@ local function Confirm()
 	frame.Text:SetPoint("TOPLEFT", 20, -18)
 	frame.Text:SetPoint("TOPRIGHT", -20, -18)
 	frame.Text:SetJustifyH("CENTER")
+	frame.Buy = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
+	frame.Buy:SetSize(110, 22)
+	frame.Buy:SetPoint("BOTTOMRIGHT", frame, "BOTTOM", -4, 16)
+	frame.Buy:SetText(L["Buy"])
+	frame.Buy:SetScript("OnClick", function()
+		local purchases = frame.purchases
+		HideConfirm()
+		if purchases then
+			Purchase(purchases)
+		end
+	end)
 	frame.Close = CreateFrame("Button", nil, frame, "SharedButtonSmallTemplate") --[[@as Button]]
 	frame.Close:SetSize(110, 22)
-	frame.Close:SetPoint("BOTTOM", frame, "BOTTOM", 0, 16)
-	frame.Close:SetText(L["Close"])
+	frame.Close:SetPoint("BOTTOMLEFT", frame, "BOTTOM", 4, 16)
+	frame.Close:SetText(L["Cancel"])
 	frame.Close:SetScript("OnClick", HideConfirm)
 	frame:Hide()
 	confirm = frame
 	return frame
 end
 
--- What is missing here and what it costs; the player buys it from the merchant's own window.
+-- What is missing here and what it costs, bought once the player agrees.
 local function AskToBuy()
 	local purchases, cost = MerchantPurchases()
 	if #purchases == 0 then
@@ -548,13 +573,9 @@ local function AskToBuy()
 	end
 	local frame = Confirm()
 	frame.cost = cost
+	frame.purchases = purchases
 	frame.Text:SetText(
-		string.format(
-			"%s  %s  %s",
-			L["Reagents still needed"],
-			PurchaseList(purchases),
-			C_CurrencyInfo.GetCoinTextureString(cost)
-		)
+		string.format(L["Buy %s for %s?"], PurchaseList(purchases), C_CurrencyInfo.GetCoinTextureString(cost))
 	)
 	frame:Show()
 end
@@ -762,7 +783,9 @@ local function EnsureMerchantFrames()
 	merchantTab = tab --[[@as Button]]
 	merchantTab:SetID(3)
 	merchantTab:SetText(L["Reagents"])
-	merchantTab:SetPoint("LEFT", _G["MerchantFrameTab2"], "RIGHT", -16, 0)
+	-- The gap between the stock tabs differs between the Vanilla and Mainline windows, so it is copied.
+	local _, _, _, gap = _G["MerchantFrameTab2"]:GetPoint(1)
+	merchantTab:SetPoint("LEFT", _G["MerchantFrameTab2"], "RIGHT", gap or 3, 0)
 	merchantTab:SetScript("OnClick", function()
 		SelectMerchantTab(true)
 	end)

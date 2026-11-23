@@ -168,8 +168,7 @@ c.auction[SILK] = 10
 c.AuctionatorScan()
 
 -- The merchant's own Reagents tab lists what the route still needs, including whole merchant stacks, in the
--- merchant's item cells, with Buy all where the page row was. The addon never buys: BuyMerchantItem is
--- protected, so the player buys from the merchant's own window (#327).
+-- merchant's item cells, with Buy all where the page row was. Buy all asks first, then buys it.
 local function Needed()
 	return ns.TrackedNeeds()[1].items[1].need
 end
@@ -190,7 +189,7 @@ local tabAnchor = tab.points[1]
 equal(tabAnchor[1], "LEFT", "the Reagents tab follows the stock tabs")
 equal(tabAnchor[2], c.G.MerchantFrameTab2, "after Buyback")
 equal(tabAnchor[3], "RIGHT", "from its right edge")
-equal(tabAnchor[4], -16, "at the stock tabs' own gap")
+equal(tabAnchor[4], 3, "at Buyback's own gap from Merchant")
 equal(tabAnchor[5], 0, "on the same line")
 equal(tab.shown, true, "a known merchant stack shows the tab")
 equal(page.shown, false, "its page waits for the tab")
@@ -217,7 +216,7 @@ equal(cell.icon, cell.button.icon, "and its icon, from the template's own icon r
 equal(cell.icon.texture, 1234, "with the item's texture")
 local buy = rawget(c.G, "SkillUpForeverMerchantBuyAll")
 equal(buy.text, "Buy all  200c", "Buy all has the total")
--- Buy all lists the need on a dialog of the addon's own on the merchant's window.
+-- Buy all asks on a dialog of the addon's own on the merchant's window, then buys what it listed.
 local function Dialog()
 	for _, frame in ipairs(c.frames) do
 		if frame.parent == c.G.MerchantFrame and frame.Close then
@@ -229,8 +228,8 @@ equal(Dialog(), nil, "nothing shows before a click")
 buy.scripts.OnClick()
 local dialog = Dialog()
 equal(dialog.shown, true, "a click lists what is missing")
-equal(dialog.Text.text, "Reagents still needed  10 Linen Cloth  200c", "with the items and the total cost")
-equal(#c.purchased, 0, "and buys nothing itself")
+equal(dialog.Text.text, "Buy 10 Linen Cloth for 200c?", "with the items and the total cost")
+equal(#c.purchased, 0, "and buys nothing before the player agrees")
 dialog.Close.scripts.OnClick()
 equal(dialog.shown, false, "Close hides the list")
 -- The need changes while it is open: what it showed is out of date, so it goes.
@@ -276,8 +275,20 @@ equal(tab.shown, true, "and brings it back")
 equal(page.shown, false, "with the page still closed")
 tab.scripts.OnClick(tab)
 buy.scripts.OnClick()
-equal(#c.purchased, 0, "the addon never calls the protected merchant buy function")
-dialog.Close.scripts.OnClick()
+dialog.Buy.scripts.OnClick()
+equal(#c.purchased, 1, "agreeing buys each listed item")
+equal(c.purchased[1].index, 1, "from its merchant slot")
+equal(c.purchased[1].count, 10, "in the whole stacks the list showed")
+equal(dialog.shown, false, "and closes the dialog")
+c.purchased = {}
+c.G.GetMerchantItemMaxStack = function()
+	return 5
+end
+buy.scripts.OnClick()
+dialog.Buy.scripts.OnClick()
+equal(#c.purchased, 2, "more than one purchase allows is bought in several")
+equal(c.purchased[1].count + c.purchased[2].count, 10, "adding up to what was listed")
+c.purchased = {}
 for _, invalid in ipairs({ false, 0, -1 }) do
 	c.merchant[1].stackCount = invalid or nil
 	c.purchased = {}
