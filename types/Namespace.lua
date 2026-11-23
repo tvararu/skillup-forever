@@ -429,7 +429,24 @@ SkillUpForeverDB = nil
 ---@class SkillUpService : SkillUpCandidate
 ---@field fee number
 
+---@class SkillUpQueueEntry
+---@field recipeID integer
+---@field count integer
+---@field learnAt number Effective skill it is first learnable at; 0 when learned.
+---@field candidate SkillUpCandidate
+---@field unpriced? boolean Its pattern or reagents have no price.
+
+---@class SkillUpPlanQueued
+---@field recipeID integer
+---@field count integer
+---@field placed boolean
+---@field at? number Base skill the route makes it at.
+---@field points? integer Skill its crafts gain there.
+---@field learnAt? number Base skill it is first learnable at.
+---@field unpriced? boolean
+
 ---@class SkillUpSnapshot
+---@field queue? SkillUpQueueEntry[] Recipes to craft a set number of times on the way.
 ---@field stockCost? fun(recipeID: integer, crafts: number, pool: table<integer, number>, stock: table<integer, number>?, take: boolean): number?
 ---@field skill number
 ---@field target number
@@ -439,6 +456,7 @@ SkillUpForeverDB = nil
 ---@field held? table<integer, integer> What the bags and bank hold of every reagent those recipes could use.
 
 ---@class SkillUpSegment
+---@field fixed? boolean A queued step: crafted exactly `crafts` times, never re-budgeted.
 ---@field recipeID integer
 ---@field fromSkill number
 ---@field toSkill number
@@ -471,6 +489,7 @@ SkillUpForeverDB = nil
 ---@field owner? SkillUpSubCraft The subcraft that directly consumes the input.
 
 ---@class SkillUpPlanCraft
+---@field fixed? boolean A queued craft.
 ---@field materialCost? number|false False when the expanded inputs have no complete price.
 ---@field recipeID integer
 ---@field from number
@@ -519,6 +538,7 @@ SkillUpForeverDB = nil
 ---@field level number
 
 ---@class SkillUpRoute
+---@field queued? {recipeID: integer, count: integer, placed: boolean, atSkill?: number, points?: integer}[]
 ---@field segments SkillUpSegment[]
 ---@field expectedCost number
 ---@field reachedSkill number
@@ -540,6 +560,7 @@ SkillUpForeverDB = nil
 
 -- What Core/Plan.lua returns: the levelling plan as a player reads it.
 ---@class SkillUpPlan
+---@field queued? SkillUpPlanQueued[]
 ---@field profession SkillUpProfession
 ---@field target number
 ---@field reached number Where the crafts get to: short of the target when the known recipes run out.

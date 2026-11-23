@@ -352,6 +352,31 @@ end
 
 local NewStockReagentCost
 
+-- What the planner knows of one recipe: its thresholds, its money at today's prices and the held reagents that
+-- price it. Its reagents join the snapshot's pool before they are priced.
+---@param recipeID integer
+---@param thresholds number[]
+---@param snapshot SkillUpSnapshot
+---@return SkillUpCandidate
+local function Candidate(recipeID, thresholds, snapshot)
+	local reagents = ns.Reagents and ns.Reagents(recipeID)
+	local held = CountHeld(snapshot, reagents)
+	local reagentCost, value, netCost = RecipeCosts(recipeID)
+	local unknown = netCost == nil and GatherableUnknown(reagents)
+	return {
+		recipeID = recipeID,
+		thresholds = thresholds,
+		netCost = netCost,
+		gatherableUnknown = unknown,
+		reagentCost = reagentCost,
+		stockSensitive = (netCost ~= nil or unknown) and ns.RecipeUsesStock and ns.RecipeUsesStock(recipeID),
+		reagents = PricedReagents(recipeID, reagents, held),
+		value = value and value.copper or nil,
+		preference = ns.PinPreference(recipeID),
+		skillUps = ns.RecipeSkillUps and ns.RecipeSkillUps(recipeID) or 1,
+	}
+end
+
 -- A route only crafts at skills from its start up to, but excluding, its target. Resolve this from the
 -- thresholds before reading the character's recipe book, bags or prices.
 ---@param recipeID integer
@@ -389,22 +414,7 @@ local function Snapshot(profession, target, known)
 	for _, recipeID in ipairs(RecipesOf(profession.skillLine)) do
 		local thresholds = RouteThresholds(recipeID, snapshot)
 		if thresholds and not Skipped(recipeID) and (known and known[recipeID] or ns.IsLearned(recipeID)) then
-			local reagents = ns.Reagents and ns.Reagents(recipeID)
-			local held = CountHeld(snapshot, reagents)
-			local reagentCost, value, netCost = RecipeCosts(recipeID)
-			local unknown = netCost == nil and GatherableUnknown(reagents)
-			recipes[#recipes + 1] = {
-				recipeID = recipeID,
-				thresholds = thresholds,
-				netCost = netCost,
-				gatherableUnknown = unknown,
-				reagentCost = reagentCost,
-				stockSensitive = (netCost ~= nil or unknown) and ns.RecipeUsesStock and ns.RecipeUsesStock(recipeID),
-				reagents = PricedReagents(recipeID, reagents, held),
-				value = value and value.copper or nil,
-				preference = ns.PinPreference(recipeID),
-				skillUps = ns.RecipeSkillUps and ns.RecipeSkillUps(recipeID) or 1,
-			}
+			recipes[#recipes + 1] = Candidate(recipeID, thresholds, snapshot)
 		end
 	end
 	snapshot.restockCost = ns.db and ns.db.restockCost or 0
@@ -513,6 +523,99 @@ local function Trainable(profession, snapshot)
 		return a.recipeID < b.recipeID
 	end)
 	return services
+end
+
+-- A queued recipe's pattern or training: what a trainer or vendor charges, else the pattern's auction price, else
+-- nothing known, which is still learnt so the route makes it, and flagged so the page says so.
+---@param profession SkillUpContext
+---@param recipeID integer
+---@return number fee
+---@return boolean unpriced
+local function QueuedFee(profession, recipeID)
+	local training = ns.TrainingFor(profession, recipeID) or VendorTraining(recipeID)
+	if training then
+		return training[1], false
+	end
+	local scroll = ns.RecipeScrolls and ns.RecipeScrolls[recipeID]
+	local price = scroll and ns.Price(scroll[1])
+	if price and not price.unknown then
+		return price.copper, false
+	end
+	return 0, true
+end
+
+-- The planner's view of this character's craft queue for the profession: each recipe's candidate, the effective
+-- skill it is first learnable at, and its count. A queued recipe the route's own search would not train joins
+-- `services`, which PlanWithTraining trains whatever it saves; one the bundle has no thresholds for is left out.
+---@param profession SkillUpContext
+---@param snapshot SkillUpSnapshot
+---@param services SkillUpService[]
+---@return SkillUpQueueEntry[]
+local function QueueOf(profession, snapshot, services)
+	local entries = {}
+	for _, queued in ipairs(ns.QueuedCrafts and ns.QueuedCrafts(profession.skillLine) or {}) do
+		local recipeID = queued.recipeID
+		local thresholds = ns.Model.Get(recipeID)
+		if thresholds then
+			local candidate, learnAt, unpriced
+			for _, recipe in ipairs(snapshot.recipes) do
+				if recipe.recipeID == recipeID then
+					candidate = recipe
+				end
+			end
+			if ns.IsLearned(recipeID) then
+				learnAt = 0
+				candidate = candidate or Candidate(recipeID, thresholds, snapshot)
+			else
+				learnAt = ns.LearnSkill(profession, recipeID)
+				for _, service in ipairs(services) do
+					if service.recipeID == recipeID then
+						candidate = service
+					end
+				end
+				if not candidate then
+					local taught = { math.max(thresholds[1], learnAt), thresholds[2], thresholds[3], thresholds[4] }
+					candidate = Candidate(recipeID, taught, snapshot)
+					---@cast candidate SkillUpService
+					candidate.fee, unpriced = QueuedFee(profession, recipeID)
+					services[#services + 1] = candidate
+				end
+			end
+			entries[#entries + 1] = {
+				recipeID = recipeID,
+				count = queued.count,
+				learnAt = learnAt,
+				candidate = candidate,
+				unpriced = unpriced or candidate.netCost == nil or nil,
+			}
+		end
+	end
+	return entries
+end
+
+-- The skill a queued recipe asks before it can be learnt raises the route's target to it: the player asked for
+-- the craft, so the route goes as far as it. Base skill.
+---@param profession SkillUpContext
+---@param target number
+---@return number
+local function QueueTarget(profession, target)
+	for _, queued in ipairs(ns.QueuedCrafts and ns.QueuedCrafts(profession.skillLine) or {}) do
+		if not ns.IsLearned(queued.recipeID) then
+			target = math.max(target, ns.LearnSkill(profession, queued.recipeID) - profession.modifier)
+		end
+	end
+	return target
+end
+
+-- The queue's part of a plan's cache key: which recipes, how many of each.
+---@param skillLine integer
+---@return string
+local function QueueKey(skillLine)
+	local parts = {}
+	for _, queued in ipairs(ns.QueuedCrafts and ns.QueuedCrafts(skillLine) or {}) do
+		parts[#parts + 1] = queued.recipeID .. "x" .. queued.count
+	end
+	return table.concat(parts, ",")
 end
 
 local BAND_NAMES = { "orange", "yellow", "green", "grey" }
@@ -659,7 +762,7 @@ end
 local function SplitAtRank(segments, rank, modifier)
 	local at = rank.reqSkill + modifier
 	for index, segment in ipairs(segments) do
-		if segment.fromSkill < at and segment.toSkill - modifier > rank.cap - RANK_SPAN then
+		if not segment.fixed and segment.fromSkill < at and segment.toSkill - modifier > rank.cap - RANK_SPAN then
 			local thresholds = ns.Model.Get(segment.recipeID)
 			---@cast thresholds number[]
 			local ups = ns.RecipeSkillUps and ns.RecipeSkillUps(segment.recipeID) or 1
@@ -1264,7 +1367,8 @@ end
 ---@param target number
 ---@param route SkillUpTrainedRoute
 ---@return SkillUpPlan
-local function Finish(profession, target, route)
+---@param queue SkillUpQueueEntry[]?
+local function Finish(profession, target, route, queue)
 	local m = profession.modifier
 	local cost = route.trainingCost
 	local segmentCount = #route.segments
@@ -1282,14 +1386,19 @@ local function Finish(profession, target, route)
 	-- prior completion result, so it also budgets the current segments here.
 	local completion = route.completion
 	if completion == nil or #route.segments ~= segmentCount then
+		-- A queued step keeps its queued crafts; the rest are budgeted together.
+		local budgeted = {}
 		for _, segment in ipairs(route.segments) do
 			segment.thresholds = ns.Model.Get(segment.recipeID)
 			segment.reagentCost = RecipeCosts(segment.recipeID)
+			if not segment.fixed then
+				budgeted[#budgeted + 1] = segment
+			end
 		end
 		local budgets
 		budgets, completion =
-			ns.Model.BudgetSegments(route.segments, ns.Model.ROUTE_CONFIDENCE, ns.db and ns.db.restockCost or 0)
-		for index, segment in ipairs(route.segments) do
+			ns.Model.BudgetSegments(budgeted, ns.Model.ROUTE_CONFIDENCE, ns.db and ns.db.restockCost or 0)
+		for index, segment in ipairs(budgeted) do
 			segment.crafts = budgets[index]
 		end
 	end
@@ -1310,6 +1419,7 @@ local function Finish(profession, target, route)
 			raw = part.raw,
 			held = part.held or nil,
 			materialCost = ExpandedMaterialCost(part),
+			fixed = segment.fixed or nil,
 		}
 	end
 	local training = {}
@@ -1361,6 +1471,21 @@ local function Finish(profession, target, route)
 		if not onRoute[recipeID] then
 			plan.unpriced = plan.unpriced + 1
 			plan.unpricedRecipes[plan.unpriced] = recipeID
+		end
+	end
+	if route.queued then
+		plan.queued = {}
+		for index, result in ipairs(route.queued) do
+			local entry = queue and queue[index]
+			plan.queued[index] = {
+				recipeID = result.recipeID,
+				count = result.count,
+				placed = result.placed,
+				at = result.atSkill and result.atSkill - m or nil,
+				points = result.points,
+				learnAt = entry and math.max(entry.learnAt - m, 0) or nil,
+				unpriced = entry and entry.unpriced or nil,
+			}
 		end
 	end
 	plan.expanded = ExpandedSignature(expanded)
@@ -1463,10 +1588,12 @@ function ns.RouteFollowable(plan)
 	for _, training in ipairs(plan.training) do
 		-- A training step the player already took is done, a recipe nobody still teaches can't be learned, and
 		-- one taught later than the route crafts it cannot be trained where the route puts it.
+		-- A queued recipe is learnt however its pattern is found, so only where it is used is checked.
+		local queued = ns.QueuedCount and ns.QueuedCount(training.recipeID) > 0
 		if
 			not ns.IsLearned(training.recipeID)
 			and (
-				not (ns.TrainingFor(profession, training.recipeID) or VendorTraining(training.recipeID))
+				not (queued or ns.TrainingFor(profession, training.recipeID) or VendorTraining(training.recipeID))
 				or ns.LearnSkill(profession, training.recipeID) > training.usedAt + modifier
 			)
 		then
@@ -1481,7 +1608,11 @@ function ns.RouteFollowable(plan)
 		end
 		local thresholds = ns.Model.Get(recipeID)
 		local ups = ns.RecipeSkillUps and ns.RecipeSkillUps(recipeID) or 1
-		if not (thresholds and ns.Model.Gain(thresholds, craft.from + modifier, ups, craft.to - craft.from) > 0) then
+		-- A queued craft is made for itself, so it need not gain skill.
+		if
+			not craft.fixed
+			and not (thresholds and ns.Model.Gain(thresholds, craft.from + modifier, ups, craft.to - craft.from) > 0)
+		then
 			return false
 		end
 	end
@@ -1557,25 +1688,21 @@ local function Rebuild(profession, target, plan, fresh)
 			fromSkill = craft.from + modifier,
 			toSkill = craft.to + modifier,
 			skillUps = ups,
-			crafts = ns.Model.CoveredCrafts(
-				thresholds,
-				craft.from + modifier,
-				craft.to + modifier,
-				ups,
-				ns.Model.ROUTE_CONFIDENCE
-			),
+			crafts = craft.fixed and craft.crafts
+				or ns.Model.CoveredCrafts(thresholds, craft.from + modifier, craft.to + modifier, ups, ns.Model.ROUTE_CONFIDENCE),
+			fixed = craft.fixed,
 		}
 	end
 	for _, step in ipairs(plan.training) do
 		if not ns.IsLearned(step.recipeID) then
 			local training = ns.TrainingFor(profession, step.recipeID) or VendorTraining(step.recipeID)
-			---@cast training number[]
+			local fee = training and training[1] or QueuedFee(profession, step.recipeID)
 			route.training[#route.training + 1] = {
 				recipeID = step.recipeID,
-				fee = training[1],
+				fee = fee,
 				atSkill = step.usedAt + modifier,
 			}
-			route.trainingCost = route.trainingCost + training[1]
+			route.trainingCost = route.trainingCost + fee
 		end
 	end
 	return Finish(profession, target, route)
@@ -1600,13 +1727,17 @@ end
 ---@param profession SkillUpProfession
 ---@return SkillUpPlan
 function ns.PlanRoute(profession)
-	local target = RouteTarget(profession)
+	local target = QueueTarget(profession, RouteTarget(profession))
 	-- The collect mode is part of the key: a switch that is on prices the reagents this character could gather,
 	-- so a plan made under the other mode is a different route (#190). The level is too: a plan made at another
 	-- level may prefer a buff that level could not use (#357).
 	local level = UnitLevel("player") or 0
 	local key =
 		table.concat({ profession.skill, profession.modifier, profession.max, target, ns.CollectMode(), level }, ":")
+	local queueKey = QueueKey(profession.skillLine)
+	if queueKey ~= "" then
+		key = key .. ":" .. queueKey
+	end
 	local cache = plans[profession.skillLine]
 	if not cache then
 		cache = { plans = {}, order = {}, bags = {} }
@@ -1650,8 +1781,13 @@ function ns.PlanRoute(profession)
 		return cached
 	end
 	local snapshot = Snapshot(profession, target)
-	local route = ns.Model.PlanWithTraining(snapshot, Trainable(profession, snapshot))
-	local plan = Finish(profession, target, route)
+	local services = Trainable(profession, snapshot)
+	local queue = QueueOf(profession, snapshot, services)
+	if #queue > 0 then
+		snapshot.queue = queue
+	end
+	local route = ns.Model.PlanWithTraining(snapshot, services)
+	local plan = Finish(profession, target, route, queue)
 	if
 		kept
 		and kept.key == key
@@ -1661,7 +1797,9 @@ function ns.PlanRoute(profession)
 	then
 		-- The player is shopping for this route: today's prices, fees and recipe data are not a reason to swap
 		-- the recipes they came for, only a route that can no longer be walked is (#621).
-		plan = Rebuild(profession, target, kept.plan, plan)
+		local fresh = plan
+		plan = Rebuild(profession, target, kept.plan, fresh)
+		plan.queued = fresh.queued
 	end
 	Commit(profession.skillLine, key, plan)
 	Forget(cache, key)
