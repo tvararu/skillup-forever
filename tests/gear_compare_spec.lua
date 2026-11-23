@@ -58,7 +58,7 @@ G.PawnGetItemData = function(link)
 end
 G.PawnIsItemAnUpgrade = function(item)
 	if item.Link == "item:1001" then
-		return { { "Prot", "Protection", 0.12, "item:1002" } }
+		return { { ScaleName = "Prot", LocalizedScaleName = "Protection", PercentUpgrade = 0.12, ExistingItemLink = "item:1002" } }
 	end
 end
 local verdict = ns.GearComparison(BELT).pawn

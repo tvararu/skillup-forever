@@ -316,7 +316,11 @@ local function PawnVerdict(link)
 	end
 	local verdict = { upgrades = {} }
 	for _, upgrade in ipairs(upgrades) do
-		verdict.upgrades[#verdict.upgrades + 1] = { scale = upgrade[2], percent = upgrade[3], existing = upgrade[4] }
+		verdict.upgrades[#verdict.upgrades + 1] = {
+			scale = upgrade.LocalizedScaleName or upgrade.ScaleName,
+			percent = upgrade.PercentUpgrade or 0,
+			existing = upgrade.ExistingItemLink,
+		}
 	end
 	return verdict
 end
