@@ -26,11 +26,14 @@ local QUEUE_ICON = "Interface\\RaidFrame\\ReadyCheck-Ready"
 ---@field List SkillUpList
 ---@field Summary FontString
 ---@field ToRoute Button
+---@field Card SkillUpPatternCard
 local page
 ---@type integer?
 local selected
 ---@type SkillUpPatternFilter
 local filter = { show = "all" }
+---@type integer?
+local chosen
 
 ---@return SkillUpProfession?
 local function Profession()
@@ -70,7 +73,7 @@ end
 
 ---@param entry SkillUpPattern
 ---@return string
-local function Detail(entry)
+function ns.PatternDetail(entry)
 	local detail = string.format(L["Skill %d, %s"], entry.skill, SourceText(entry))
 	if entry.bop then
 		detail = string.format(L["%s, binds on pickup"], detail)
@@ -98,30 +101,6 @@ local function Text(entry)
 		return string.format(L["%s (queued %d)"], entry.name, entry.queued)
 	end
 	return entry.name
-end
-
----@param profession SkillUpProfession
----@param entry SkillUpPattern
----@return fun(tooltip: GameTooltip)
-local function Tooltip(profession, entry)
-	return function(tooltip)
-		if entry.itemID and C_Item.DoesItemExistByID(entry.itemID) then
-			tooltip:SetItemByID(entry.itemID)
-			GameTooltip_AddBlankLineToTooltip(tooltip)
-		else
-			GameTooltip_SetTitle(tooltip, entry.name)
-		end
-		GameTooltip_AddNormalLine(tooltip, string.format(L["Learnt at %s %d"], profession.name, entry.skill))
-		GameTooltip_AddHighlightLine(tooltip, SourceText(entry))
-		local recipe = ns.RecipeData[entry.recipeID]
-		for _, reagent in ipairs(recipe and recipe.reagents or {}) do
-			local name = C_Item.GetItemNameByID(reagent.itemID) or string.format(L["item %d"], reagent.itemID)
-			GameTooltip_AddHighlightLine(tooltip, string.format(L["%d× %s"], reagent.quantity, name))
-		end
-		GameTooltip_AddBlankLineToTooltip(tooltip)
-		GameTooltip_AddInstructionLine(tooltip, L["Click to queue one craft, shift-click to queue its set."])
-		GameTooltip_AddInstructionLine(tooltip, L["Right-click for more."])
-	end
 end
 
 ---@param profession SkillUpProfession
@@ -170,13 +149,18 @@ local function Render()
 		page.Summary:SetText("")
 		page.List:Message(L["Learn a crafting profession to see its patterns."])
 		page.List:Finish()
+		page.Card:SetPattern(nil, nil)
 		return
 	end
 	page.Profession:SetText(profession.name)
 	page.Skill:SetText(string.format(L["%d / %d"], profession.base, profession.max))
 	local entries = ns.Patterns(profession)
 	local known, queued = 0, 0
+	local chosenEntry
 	for _, entry in ipairs(entries) do
+		if entry.recipeID == chosen then
+			chosenEntry = entry
+		end
 		if entry.state == "known" then
 			known = known + 1
 		end
@@ -190,9 +174,9 @@ local function Render()
 		page.List:Add({
 			icon = entry.itemID and C_Item.GetItemIconByID(entry.itemID) or QUEUE_ICON,
 			text = Text(entry),
-			detail = Detail(entry),
+			detail = ns.PatternDetail(entry),
 			color = Color(entry),
-			tooltip = Tooltip(profession, entry),
+			current = entry.recipeID == chosen,
 			click = Click(profession, entry),
 			menu = Menu(profession, entry),
 		})
@@ -201,6 +185,7 @@ local function Render()
 		page.List:Message(L["No recipe matches."])
 	end
 	page.List:Finish()
+	page.Card:SetPattern(profession, chosenEntry)
 end
 
 local function Refresh()
@@ -257,6 +242,7 @@ local function CreatePage()
 				return skillLine == selected
 			end, function()
 				selected = skillLine
+				chosen = nil
 				page.List.scrollBox:ScrollToBegin()
 				Render()
 			end)
@@ -289,8 +275,13 @@ local function CreatePage()
 	title:SetPoint("BOTTOMLEFT", inset, "TOPLEFT", 4, 4)
 	title:SetText(L["Patterns"])
 	inset:SetPoint("TOPLEFT", 16, -88)
-	inset:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 44)
+	inset:SetPoint("BOTTOMRIGHT", page, "BOTTOM", -60, 44)
 	page.List = ns.CreateList(inset)
+
+	local card = ns.CreatePatternCard(page)
+	card:SetPoint("TOPLEFT", inset, "TOPRIGHT", 8, 0)
+	card:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -16, 44)
+	page.Card = card
 
 	local summary = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	summary:SetPoint("LEFT", inset, "BOTTOMLEFT", 4, -21)
@@ -299,7 +290,7 @@ local function CreatePage()
 	local toRoute = CreateFrame("Button", nil, page, "SharedButtonSmallTemplate") --[[@as Button]]
 	toRoute:SetText(L["Show route"])
 	toRoute:SetWidth(120)
-	toRoute:SetPoint("RIGHT", inset, "BOTTOMRIGHT", 0, -21)
+	toRoute:SetPoint("RIGHT", card, "BOTTOMRIGHT", 0, -21)
 	toRoute:SetScript("OnClick", function()
 		ns.Pages.Select("route")
 	end)
