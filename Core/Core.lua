@@ -65,6 +65,7 @@ local DEFAULTS = {
 	showAllGear = {}, -- ["Name-Realm"] = true: the crafted gear view shows gear this character cannot make yet
 	pinnedRecipes = {}, -- ["Name-Realm"] = { [recipeID] = priority }: most recently pinned wins
 	skippedRecipes = {}, -- ["Name-Realm"] = { [recipeID] = true }: "Not this recipe", left out of every route
+	craftQueue = {}, -- ["Name-Realm"] = { {recipeID, count} }: crafts the route must make, in the order queued
 	whatsNew = false,
 	lastVersion = "", -- the version that last ran; "" before the first
 	vendor = {}, -- [itemID] = copper per unit, observed at merchants
@@ -352,6 +353,31 @@ local function LoadDB()
 					recipes[recipeID] = nil
 				end
 			end
+		end
+	end
+	-- Only whole positive counts of a recipe ID are kept, each recipe once.
+	for key, queue in pairs(loaded.craftQueue) do
+		if type(key) ~= "string" or type(queue) ~= "table" then
+			loaded.craftQueue[key] = nil
+		else
+			local kept, seen = {}, {}
+			for _, entry in ipairs(queue) do
+				local recipeID, count = type(entry) == "table" and entry.recipeID, type(entry) == "table" and entry.count
+				if
+					type(recipeID) == "number"
+					and recipeID > 0
+					and recipeID % 1 == 0
+					and type(count) == "number"
+					and count >= 1
+					and count < math.huge
+					and count % 1 == 0
+					and not seen[recipeID]
+				then
+					seen[recipeID] = true
+					kept[#kept + 1] = { recipeID = recipeID, count = count }
+				end
+			end
+			loaded.craftQueue[key] = #kept > 0 and kept or nil
 		end
 	end
 	-- A mode no longer saved, or a typo, reads as the default auction: buying is the faster way to skill up.
@@ -692,7 +718,89 @@ function ns.SetSkipped(recipeID, skip)
 	if skip and ns.db.pinnedRecipes[key] then
 		ns.db.pinnedRecipes[key][recipeID] = nil
 	end
+	if skip then
+		ns.QueueCraft(recipeID, 0)
+	end
 	ns.Changed("settings")
+end
+
+-- The craft queue: recipes this character asked the route to make a set number of times on the way to its target,
+-- in the order queued. The planner places each where it is first learnable. Kept per character, like the pins.
+---@param skillLine integer?
+---@return {recipeID: integer, count: integer}[]
+function ns.QueuedCrafts(skillLine)
+	local list = {}
+	local key = ns.CharacterKey()
+	for _, entry in ipairs(key and ns.db.craftQueue[key] or {}) do
+		local recipe = ns.RecipeData[entry.recipeID]
+		if not skillLine or (recipe and recipe.skillLine == skillLine) then
+			list[#list + 1] = { recipeID = entry.recipeID, count = entry.count }
+		end
+	end
+	return list
+end
+
+---@param recipeID integer
+---@return integer
+function ns.QueuedCount(recipeID)
+	local key = ns.CharacterKey()
+	for _, entry in ipairs(key and ns.db.craftQueue[key] or {}) do
+		if entry.recipeID == recipeID then
+			return entry.count
+		end
+	end
+	return 0
+end
+
+-- Sets a recipe's queued count; 0 takes it off the queue. A queued recipe is no longer skipped.
+---@param recipeID integer
+---@param count integer
+function ns.QueueCraft(recipeID, count)
+	local key = ns.CharacterKey()
+	if not key then
+		return
+	end
+	local queue = ns.db.craftQueue[key] or {}
+	local found
+	for index, entry in ipairs(queue) do
+		if entry.recipeID == recipeID then
+			found = index
+			break
+		end
+	end
+	count = math.floor(count)
+	if count >= 1 then
+		if found then
+			queue[found].count = count
+		else
+			queue[#queue + 1] = { recipeID = recipeID, count = count }
+		end
+		if ns.db.skippedRecipes[key] then
+			ns.db.skippedRecipes[key][recipeID] = nil
+			ns.db.skippedRecipes[key] = next(ns.db.skippedRecipes[key]) and ns.db.skippedRecipes[key] or nil
+		end
+	elseif found then
+		table.remove(queue, found)
+	end
+	ns.db.craftQueue[key] = #queue > 0 and queue or nil
+	ns.Changed("settings")
+end
+
+-- One craft of a queued recipe was made: its count goes down by one.
+---@param recipeID integer
+function ns.CraftedQueued(recipeID)
+	local count = ns.QueuedCount(recipeID)
+	if count > 0 then
+		ns.QueueCraft(recipeID, count - 1)
+	end
+end
+
+-- Empties one profession's queue, or every queue of this character.
+---@param skillLine integer?
+function ns.ClearQueue(skillLine)
+	for _, entry in ipairs(ns.QueuedCrafts(skillLine)) do
+		ns.QueueCraft(entry.recipeID, 0)
+	end
 end
 
 ---@param recipeID integer
@@ -1150,6 +1258,11 @@ ns.OnFilesLoaded(function()
 		end
 	end
 	ns.WhenEvent("SPELLS_CHANGED", TalentChanged)
+	ns.WhenEvent("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
+		if unit == "player" and type(spellID) == "number" and ns.QueuedCount(spellID) > 0 then
+			ns.CraftedQueued(spellID)
+		end
+	end)
 	ns.WhenEvent("TRAIT_CONFIG_UPDATED", TalentChanged)
 	ns.WhenEvent("TRAIT_NODE_CHANGED", TalentChanged)
 	ns.InitLive()
