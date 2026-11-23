@@ -94,6 +94,21 @@ equal(raised.queued[3].placed, true, "and is made there")
 equal(Fixed(raised, BOOTS) ~= nil, true, "the boots are on the route")
 equal(Trained(raised, BOOTS) ~= nil, true, "a pattern with no seen price is still learnt")
 equal(raised.queued[3].unpriced, true, "and is flagged as unpriced")
+local patterns = {}
+for _, item in ipairs(ns.RouteReagents(raised)) do
+	patterns[item.itemID] = item
+end
+equal(patterns[BOOTS_PATTERN] and patterns[BOOTS_PATTERN].need, 1, "a pattern no vendor sells goes on the list")
+equal(patterns[BELT_PATTERN], nil, "a vendor's pattern is bought at the vendor, not listed")
+c.bags[BOOTS_PATTERN] = 1
+ns.Changed("bags")
+local listed = false
+for _, item in ipairs(ns.RouteReagents(Plan(80))) do
+	listed = listed or item.itemID == BOOTS_PATTERN
+end
+equal(listed, false, "a pattern in the bags is not listed")
+c.bags[BOOTS_PATTERN] = nil
+ns.Changed("bags")
 
 -- A grey queued craft gains nothing but is still a step the route can walk.
 equal(ns.RouteFollowable(raised), true, "a route with queued crafts can be followed")

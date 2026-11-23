@@ -1946,6 +1946,20 @@ function ns.RouteReagents(plan)
 		end
 		return (a.allocatedPrice and a.allocatedPrice.copper or 0) < (b.allocatedPrice and b.allocatedPrice.copper or 0)
 	end)
+	-- A queued recipe's pattern that no trainer or vendor offers is bought where it can be found, the auction house
+	-- first: one copy, unless the bags or bank hold it.
+	for _, step in ipairs(plan.training or {}) do
+		local scroll = step.scroll
+		if
+			scroll
+			and ns.QueuedCount
+			and ns.QueuedCount(step.recipeID) > 0
+			and not VendorTraining(step.recipeID)
+			and (ns.Have and ns.Have(scroll) or 0) < 1
+		then
+			items[#items + 1] = { itemID = scroll, need = 1, source = ns.Model.ShoppingSource(ns.PriceSource(scroll)) }
+		end
+	end
 	-- A carried tool the route needs goes in once, after the reagents, so its place is stable.
 	for _, itemID in ipairs(ns.MissingToolItems and ns.MissingToolItems(plan) or {}) do
 		items[#items + 1] = { itemID = itemID, need = 1, source = ns.Model.ShoppingSource(ns.PriceSource(itemID)) }
