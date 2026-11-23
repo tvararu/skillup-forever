@@ -26,6 +26,7 @@ local QUEUE_ICON = "Interface\\RaidFrame\\ReadyCheck-Ready"
 ---@field List SkillUpList
 ---@field Summary FontString
 ---@field ToRoute Button
+---@field Clear Button
 ---@field Card SkillUpPatternCard
 local page
 ---@type integer?
@@ -147,6 +148,7 @@ local function Render()
 		page.Profession:SetText(L["No profession"])
 		page.Skill:SetText("")
 		page.Summary:SetText("")
+		page.Clear:Disable()
 		page.List:Message(L["Learn a crafting profession to see its patterns."])
 		page.List:Finish()
 		page.Card:SetPattern(nil, nil)
@@ -169,6 +171,7 @@ local function Render()
 		end
 	end
 	page.Summary:SetText(string.format(L["%d of %d learned, %d queued"], known, #entries, queued))
+	page.Clear:SetEnabled(queued > 0)
 	local shown = ns.FilterPatterns(entries, filter)
 	for _, entry in ipairs(shown) do
 		page.List:Add({
@@ -295,6 +298,15 @@ local function CreatePage()
 		ns.Pages.Select("route")
 	end)
 	page.ToRoute = toRoute
+
+	local clear = CreateFrame("Button", nil, page, "SharedButtonSmallTemplate") --[[@as Button]]
+	clear:SetText(L["Clear queue"])
+	clear:SetWidth(120)
+	clear:SetPoint("RIGHT", toRoute, "LEFT", -6, 0)
+	clear:SetScript("OnClick", function()
+		ns.ClearQueue(selected)
+	end)
+	page.Clear = clear
 
 	page:SetScript("OnShow", Render)
 end
