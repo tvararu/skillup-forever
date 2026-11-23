@@ -80,21 +80,6 @@ local function RangesText(t)
 	return string.format(L["Orange %s, yellow %s, green %s, grey %s"], parts[1], parts[2], parts[3], parts[4])
 end
 
----@param deltas SkillUpStatDelta[]
----@return string
-local function DeltaText(deltas)
-	if #deltas == 0 then
-		return L["no stat change"]
-	end
-	local parts = {}
-	for _, delta in ipairs(deltas) do
-		local name = rawget(_G, delta.stat) or delta.stat
-		local text = string.format("%+d %s", delta.delta, name)
-		parts[#parts + 1] = (delta.delta > 0 and GREEN_FONT_COLOR or RED_FONT_COLOR):WrapTextInColorCode(text)
-	end
-	return table.concat(parts, ", ")
-end
-
 ---@param itemID integer?
 ---@return string?
 local function CompareText(itemID)
@@ -106,10 +91,6 @@ local function CompareText(itemID)
 		return nil
 	end
 	local lines = {}
-	for _, against in ipairs(comparison.against) do
-		local worn = against.link or GRAY_FONT_COLOR:WrapTextInColorCode(L["nothing worn"])
-		lines[#lines + 1] = string.format(L["Against %s: %s"], worn, DeltaText(against.deltas))
-	end
 	local pawn = comparison.pawn
 	if pawn then
 		if #pawn.upgrades == 0 then
@@ -122,7 +103,7 @@ local function CompareText(itemID)
 			)
 		end
 	end
-	return table.concat(lines, "\n")
+	return #lines > 0 and table.concat(lines, "\n") or nil
 end
 
 ---@param card SkillUpPatternCard
@@ -220,22 +201,30 @@ local function Render(card)
 
 	local t = Bands(profession, entry)
 	local bar = card.Bar
-	local anchor = card.Icon --[[@as Region]]
+	local anchor
 	if t then
 		ns.LayoutSkillBar(bar, t, profession.skill or profession.base)
-		bar:SetScale(math.min(1, (card.Body:GetWidth() - 2 * PAD) / bar:GetWidth()))
+		bar:SetScale(math.min(1, card.Body:GetWidth() * 0.45 / bar:GetWidth()))
 		bar:ClearAllPoints()
-		bar:SetPoint("TOPLEFT", card.Icon, "BOTTOMLEFT", 0, -12)
+		bar:SetPoint("TOPRIGHT", card.Body, "TOPRIGHT", -PAD / bar:GetScale(), -PAD / bar:GetScale())
 		bar:Show()
 		card.Ranges:SetText(RangesText(t))
 		card.Ranges:Show()
-		anchor = card.Ranges
 	else
 		bar:Hide()
 		card.Ranges:Hide()
 	end
+	local right = t and bar or card.Body
+	local edge = t and "LEFT" or "RIGHT"
+	card.Name:SetPoint("RIGHT", right, edge, -PAD, 0)
+	card.Source:SetPoint("RIGHT", right, edge, -PAD, 0)
+	-- The reagents start under the icon, or under the bands when those reach lower.
+	local below = 0
+	if t then
+		below = math.max(0, bar:GetHeight() * bar:GetScale() + 2 + card.Ranges:GetStringHeight() - ICON_SIZE)
+	end
 	card.ReagentsLabel:ClearAllPoints()
-	card.ReagentsLabel:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -12)
+	card.ReagentsLabel:SetPoint("TOPLEFT", card.Icon, "BOTTOMLEFT", 0, -12 - below)
 
 	local last = RenderReagents(card, entry)
 	card.Cost:ClearAllPoints()
@@ -311,7 +300,6 @@ function ns.CreatePatternCard(parent)
 	card.Icon:SetPoint("TOPLEFT", PAD, -PAD)
 	card.Name = Label(body, "GameFontNormalLarge")
 	card.Name:SetPoint("TOPLEFT", card.Icon, "TOPRIGHT", 8, -2)
-	card.Name:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
 	local header = CreateFrame("Button", nil, body)
 	header:SetPoint("TOPLEFT", card.Icon, "TOPLEFT")
 	header:SetPoint("BOTTOMRIGHT", card.Name, "BOTTOMRIGHT", 0, -16)
@@ -326,12 +314,12 @@ function ns.CreatePatternCard(parent)
 	header:SetScript("OnLeave", GameTooltip_Hide)
 	card.Source = Label(body, "GameFontHighlightSmall")
 	card.Source:SetPoint("TOPLEFT", card.Name, "BOTTOMLEFT", 0, -4)
-	card.Source:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
 
 	card.Bar = ns.CreateSkillBar()
 	card.Bar:SetParent(body)
 	card.Ranges = Label(body, "GameFontHighlightSmall")
-	card.Ranges:SetPoint("TOPLEFT", card.Bar, "BOTTOMLEFT", 0, -2)
+	card.Ranges:SetJustifyH("RIGHT")
+	card.Ranges:SetPoint("TOPRIGHT", card.Bar, "BOTTOMRIGHT", 0, -2)
 
 	card.ReagentsLabel = Label(body, "GameFontNormal")
 	card.ReagentsLabel:SetText(L["Reagents"])
