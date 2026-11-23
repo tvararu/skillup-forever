@@ -7,7 +7,7 @@ end
 local L = ns.L
 
 -- The Patterns page's right side: the selected recipe's item, where it is learnt, its skill-up bands, reagents
--- and their prices, how it compares with what is worn, its full item tooltip, and buttons to queue copies.
+-- and their prices, its full item tooltip, and buttons to queue copies.
 
 local PAD = 12
 local ICON_SIZE = 40
@@ -31,7 +31,7 @@ local BAND_NAMES = { "orange", "yellow", "green", "grey" }
 ---@field ReagentsLabel FontString
 ---@field Reagents SkillUpPatternCardReagent[]
 ---@field Cost FontString
----@field Compare FontString
+---@field Problem FontString
 ---@field Stats GameTooltip
 ---@field Queued FontString
 ---@field Add Button
@@ -78,32 +78,6 @@ local function RangesText(t)
 		parts[i] = ns.COLORS[name]:WrapTextInColorCode(tostring(t[i]))
 	end
 	return string.format(L["Orange %s, yellow %s, green %s, grey %s"], parts[1], parts[2], parts[3], parts[4])
-end
-
----@param itemID integer?
----@return string?
-local function CompareText(itemID)
-	if not itemID then
-		return nil
-	end
-	local comparison = ns.GearComparison(itemID)
-	if not comparison then
-		return nil
-	end
-	local lines = {}
-	local pawn = comparison.pawn
-	if pawn then
-		if #pawn.upgrades == 0 then
-			lines[#lines + 1] = L["Pawn: not an upgrade"]
-		end
-		for _, upgrade in ipairs(pawn.upgrades) do
-			local percent = math.floor(upgrade.percent * 100 + 0.5)
-			lines[#lines + 1] = GREEN_FONT_COLOR:WrapTextInColorCode(
-				string.format(L["Pawn: %d%% upgrade for %s"], percent, upgrade.scale)
-			)
-		end
-	end
-	return #lines > 0 and table.concat(lines, "\n") or nil
 end
 
 ---@param card SkillUpPatternCard
@@ -201,7 +175,6 @@ local function Render(card)
 
 	local t = Bands(profession, entry)
 	local bar = card.Bar
-	local anchor
 	if t then
 		ns.LayoutSkillBar(bar, t, profession.skill or profession.base)
 		bar:SetScale(math.min(1, card.Body:GetWidth() * 0.45 / bar:GetWidth()))
@@ -229,41 +202,26 @@ local function Render(card)
 	local last = RenderReagents(card, entry)
 	card.Cost:ClearAllPoints()
 	card.Cost:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -6)
-	anchor = card.Cost
 
 	local queued = ns.QueuedCount(entry.recipeID)
 	card.Queued:SetText(string.format(L["Queued: %d"], queued))
 	card.Remove:SetEnabled(queued > 0)
 
-	-- The comparison and the stats lean on Pawn and on item data this client may not have: a failure shows in
-	-- the card instead of stopping the rest of it.
-	local ok, compare = pcall(CompareText, itemID)
-	if not ok then
-		compare = RED_FONT_COLOR:WrapTextInColorCode(tostring(compare))
-	end
-	card.Compare:SetText(compare or "")
-	card.Compare:SetShown(compare ~= nil)
-	if compare then
-		card.Compare:ClearAllPoints()
-		card.Compare:SetPoint("TOPLEFT", card.Cost, "BOTTOMLEFT", 0, -10)
-		card.Compare:SetPoint("RIGHT", card.Body, "RIGHT", -PAD, 0)
-		anchor = card.Compare
-	end
-
 	if itemID then
+		card.Problem:SetText("")
 		local shown, problem = pcall(function()
 			local stats = card.Stats
 			stats:SetOwner(card, "ANCHOR_NONE")
 			stats:ClearAllPoints()
-			stats:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -8)
+			stats:SetPoint("TOPLEFT", card.Cost, "BOTTOMLEFT", -4, -8)
 			stats:SetItemByID(itemID)
 			stats:SetFrameStrata(card:GetFrameStrata())
 			stats:SetFrameLevel(card:GetFrameLevel() + 20)
 			stats:Show()
 		end)
 		if not shown then
-			card.Compare:SetText((compare and compare .. "\n" or "") .. RED_FONT_COLOR:WrapTextInColorCode(tostring(problem)))
-			card.Compare:Show()
+			card.Problem:SetText(RED_FONT_COLOR:WrapTextInColorCode(tostring(problem)))
+			card.Problem:SetPoint("TOPLEFT", card.Cost, "BOTTOMLEFT", 0, -8)
 		end
 	end
 end
@@ -324,8 +282,7 @@ function ns.CreatePatternCard(parent)
 	card.ReagentsLabel = Label(body, "GameFontNormal")
 	card.ReagentsLabel:SetText(L["Reagents"])
 	card.Cost = Label(body, "GameFontHighlight")
-	card.Compare = Label(body, "GameFontHighlightSmall")
-	card.Compare:SetSpacing(2)
+	card.Problem = Label(body, "GameFontHighlightSmall")
 
 	card.Stats = CreateFrame("GameTooltip", "SkillUpForeverPatternCardTooltip", body, "GameTooltipTemplate") --[[@as GameTooltip]]
 
@@ -351,7 +308,6 @@ function ns.CreatePatternCard(parent)
 
 	local events = CreateFrame("Frame", nil, card)
 	events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-	events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 	local pending = false
 	events:SetScript("OnEvent", function()
 		if pending or not (card:IsVisible() and card.entry) then
