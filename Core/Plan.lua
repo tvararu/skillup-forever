@@ -525,6 +525,14 @@ local function Trainable(profession, snapshot)
 	return services
 end
 
+-- The Merchant's Favor a recipe's pattern costs, nil for one not sold for Favor.
+---@param recipeID integer
+---@return integer?
+local function FavorPrice(recipeID)
+	local source = ns.PatternSources and ns.PatternSources[recipeID]
+	return source and source.favor or nil
+end
+
 -- A queued recipe's pattern or training: what a trainer or vendor charges, else the pattern's auction price, else
 -- nothing known, which is still learnt so the route makes it, and flagged so the page says so.
 ---@param profession SkillUpContext
@@ -535,6 +543,10 @@ local function QueuedFee(profession, recipeID)
 	local training = ns.TrainingFor(profession, recipeID) or VendorTraining(recipeID)
 	if training then
 		return training[1], false
+	end
+	-- A pattern bought with Merchant's Favor costs no gold.
+	if FavorPrice(recipeID) then
+		return 0, false
 	end
 	local scroll = ns.RecipeScrolls and ns.RecipeScrolls[recipeID]
 	local price = scroll and ns.Price(scroll[1])
@@ -586,7 +598,8 @@ local function QueueOf(profession, snapshot, services)
 				count = queued.count,
 				learnAt = learnAt,
 				candidate = candidate,
-				unpriced = unpriced or candidate.netCost == nil or nil,
+				-- A queued craft is made for itself, so only what it costs to make matters, not what it sells for.
+				unpriced = unpriced or candidate.reagentCost == nil or nil,
 			}
 		end
 	end
@@ -1485,6 +1498,7 @@ local function Finish(profession, target, route, queue)
 				points = result.points,
 				learnAt = entry and math.max(entry.learnAt - m, 0) or nil,
 				unpriced = entry and entry.unpriced or nil,
+				favor = not ns.IsLearned(result.recipeID) and FavorPrice(result.recipeID) or nil,
 			}
 		end
 	end
@@ -1955,6 +1969,7 @@ function ns.RouteReagents(plan)
 			and ns.QueuedCount
 			and ns.QueuedCount(step.recipeID) > 0
 			and not VendorTraining(step.recipeID)
+			and not FavorPrice(step.recipeID)
 			and (ns.Have and ns.Have(scroll) or 0) < 1
 		then
 			items[#items + 1] = { itemID = scroll, need = 1, source = ns.Model.ShoppingSource(ns.PriceSource(scroll)) }

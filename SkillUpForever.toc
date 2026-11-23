@@ -43,6 +43,7 @@ Data\Recipes.lua
 Data\Trainer.lua
 Data\Sources.lua
 Data\Credits.lua
+Data\PatternSources.lua
 Core\Model.lua
 Core\Demand.lua
 Core\Dyadic.lua
@@ -52,6 +53,7 @@ Core\Plan.lua
 Core\Gear.lua
 Core\Buffs.lua
 Core\Core.lua
+Core\Patterns.lua
 Core\Stats.lua
 Integrations\Questie.lua
 Integrations\AtlasLoot.lua

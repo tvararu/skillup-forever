@@ -444,6 +444,7 @@ SkillUpForeverDB = nil
 ---@field points? integer Skill its crafts gain there.
 ---@field learnAt? number Base skill it is first learnable at.
 ---@field unpriced? boolean
+---@field favor? integer Merchant's Favor its pattern costs.
 
 ---@class SkillUpSnapshot
 ---@field queue? SkillUpQueueEntry[] Recipes to craft a set number of times on the way.

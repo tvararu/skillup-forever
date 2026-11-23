@@ -12,6 +12,12 @@ L["Unlearned recipe order"] = "Unlearned recipe order"
 L["How recipes you have not learned are ordered. Learned recipes keep the selected recipe order."] =
 	"How recipes you have not learned are ordered. Learned recipes keep the selected recipe order."
 ns.L = L
+L["Basic"] = "Basic"
+L["Merchant's Favor"] = "Merchant's Favor"
+L["Reputation"] = "Reputation"
+L["Vendor"] = "Vendor"
+L["Drop"] = "Drop"
+L["Unknown"] = "Unknown"
 L["Queue to craft"] = "Queue to craft"
 L["Queue one more"] = "Queue one more"
 L["Remove from queue"] = "Remove from queue"

@@ -945,7 +945,8 @@ local function Planner(snapshot)
 			local candidate = byID[recipeID]
 			if segment.fixed then
 				candidate = queuedOf[recipeID]
-				t, cost, reagentCost = candidate.thresholds, candidate.netCost, candidate.reagentCost
+				-- What it sells for may be unknown (a bound product): what it costs to make still counts.
+				t, cost, reagentCost = candidate.thresholds, candidate.netCost or candidate.reagentCost, candidate.reagentCost
 			elseif extra and extra.recipeID == recipeID then
 				t, cost, reagentCost, candidate = extra.thresholds, extra.netCost, extra.reagentCost, extra
 			end

@@ -6,8 +6,8 @@ local equal = Client.equal
 local LEATHERWORKING = 165
 local LIGHT_LEATHER, COARSE_LEATHER, COARSE_THREAD, FINE_THREAD, CURED_LIGHT_HIDE = 2318, 2319, 2320, 2321, 4231
 local KNOWN = { 2149, 2153, 2158, 2159, 2160, 2166 }
-local BELT, GLOVES, BOOTS = 1255138, 1255126, 1255117
-local BELT_PATTERN, GLOVES_PATTERN, BOOTS_PATTERN = 252769, 252781, 252790
+local BELT, GLOVES, BOOTS, ARMOR = 1255138, 1255126, 1255117, 1255132
+local BELT_PATTERN, GLOVES_PATTERN, BOOTS_PATTERN, ARMOR_PATTERN = 252769, 252781, 252790, 252775
 local SET_REAGENT = 249427
 
 local c = Client.load({ auctionator = false })
@@ -25,6 +25,7 @@ for itemID, price in pairs({
 	[CURED_LIGHT_HIDE] = 1,
 	[249409] = 5,
 	[SET_REAGENT] = 7,
+	[252443] = 50,
 	[BELT_PATTERN] = 300,
 	[GLOVES_PATTERN] = 400,
 }) do
@@ -92,22 +93,29 @@ local raised = Plan(80)
 equal(raised.target, 85, "a queued pattern learnt past the target raises it")
 equal(raised.queued[3].placed, true, "and is made there")
 equal(Fixed(raised, BOOTS) ~= nil, true, "the boots are on the route")
-equal(Trained(raised, BOOTS) ~= nil, true, "a pattern with no seen price is still learnt")
-equal(raised.queued[3].unpriced, true, "and is flagged as unpriced")
+equal(Trained(raised, BOOTS).fee, 0, "a Merchant's Favor pattern costs no gold")
+equal(raised.queued[3].favor, 30, "the queue says what Favor it costs")
+equal(raised.queued[3].unpriced, nil, "and does not call it unpriced")
+
+ns.QueueCraft(ARMOR, 1)
+raised = Plan(80)
+equal(Trained(raised, ARMOR) ~= nil, true, "a pattern that only drops is still learnt")
+equal(raised.queued[4].unpriced, true, "and is flagged as unpriced")
 local patterns = {}
 for _, item in ipairs(ns.RouteReagents(raised)) do
 	patterns[item.itemID] = item
 end
-equal(patterns[BOOTS_PATTERN] and patterns[BOOTS_PATTERN].need, 1, "a pattern no vendor sells goes on the list")
-equal(patterns[BELT_PATTERN], nil, "a vendor's pattern is bought at the vendor, not listed")
-c.bags[BOOTS_PATTERN] = 1
+equal(patterns[ARMOR_PATTERN] and patterns[ARMOR_PATTERN].need, 1, "a pattern no vendor sells goes on the list")
+equal(patterns[BOOTS_PATTERN], nil, "a Merchant's Favor pattern is not")
+equal(patterns[BELT_PATTERN], nil, "nor is a vendor's")
+c.bags[ARMOR_PATTERN] = 1
 ns.Changed("bags")
 local listed = false
 for _, item in ipairs(ns.RouteReagents(Plan(80))) do
-	listed = listed or item.itemID == BOOTS_PATTERN
+	listed = listed or item.itemID == ARMOR_PATTERN
 end
 equal(listed, false, "a pattern in the bags is not listed")
-c.bags[BOOTS_PATTERN] = nil
+c.bags[ARMOR_PATTERN] = nil
 ns.Changed("bags")
 
 -- A grey queued craft gains nothing but is still a step the route can walk.
