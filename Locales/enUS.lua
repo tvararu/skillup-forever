@@ -12,6 +12,16 @@ L["Unlearned recipe order"] = "Unlearned recipe order"
 L["How recipes you have not learned are ordered. Learned recipes keep the selected recipe order."] =
 	"How recipes you have not learned are ordered. Learned recipes keep the selected recipe order."
 ns.L = L
+L["Queue to craft"] = "Queue to craft"
+L["Queue one more"] = "Queue one more"
+L["Remove from queue"] = "Remove from queue"
+L["Made at %d, +%d skill"] = "Made at %d, +%d skill"
+L["Learnable at %d, past where the route ends"] = "Learnable at %d, past where the route ends"
+L["Not on this route"] = "Not on this route"
+L["%s; price unknown"] = "%s; price unknown"
+L["Queued: %d× %s"] = "Queued: %d× %s"
+L["Right-click to change or remove it."] = "Right-click to change or remove it."
+L["Craft %d× %s (queued)"] = "Craft %d× %s (queued)"
 L["This route is mostly %s: %d recipes are left out until their costs or sale values are known."] =
 	"This route is mostly %s: %d recipes are left out until their costs or sale values are known."
 L["Price self-supplied reagents at auction values"] = "Price self-supplied reagents at auction values"

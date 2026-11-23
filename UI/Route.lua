@@ -176,6 +176,15 @@ local function RecipeMenu(recipeID)
 		root:CreateButton(pinned and L["Unpin recipe"] or L["Pin for skill-ups"], function()
 			ns.SetPinned(recipeID, not pinned)
 		end)
+		local queued = ns.QueuedCount(recipeID)
+		root:CreateButton(queued > 0 and L["Queue one more"] or L["Queue to craft"], function()
+			ns.QueueCraft(recipeID, queued + 1)
+		end)
+		if queued > 0 then
+			root:CreateButton(L["Remove from queue"], function()
+				ns.QueueCraft(recipeID, 0)
+			end)
+		end
 	end
 end
 
@@ -394,6 +403,46 @@ local function RenderPinned(list, plan)
 	end
 end
 
+-- Where the route makes a queued recipe, or why it doesn't.
+---@param queued SkillUpPlanQueued
+---@return string
+local function QueuedStatus(queued)
+	local status
+	if queued.placed then
+		status = string.format(L["Made at %d, +%d skill"], queued.at, queued.points or 0)
+	elseif queued.learnAt and queued.learnAt > 0 then
+		status = string.format(L["Learnable at %d, past where the route ends"], queued.learnAt)
+	else
+		status = L["Not on this route"]
+	end
+	if queued.unpriced then
+		status = string.format(L["%s; price unknown"], status)
+	end
+	return status
+end
+
+-- The craft queue under the route: each recipe, how many, and where it is made. Right-click changes or removes it.
+---@param list SkillUpList
+---@param plan SkillUpPlan
+local function RenderQueued(list, plan)
+	for _, queued in ipairs(plan.queued or {}) do
+		local name = RecipeName(queued.recipeID)
+		list:Add({
+			icon = RecipeIcon(queued.recipeID),
+			text = string.format(L["Queued: %d× %s"], queued.count, name),
+			detail = QueuedStatus(queued),
+			color = queued.placed and NORMAL_FONT_COLOR or RED_FONT_COLOR,
+			tooltip = function(tooltip)
+				RecipeTitle(tooltip, queued.recipeID, name)
+				GameTooltip_AddHighlightLine(tooltip, QueuedStatus(queued))
+				GameTooltip_AddInstructionLine(tooltip, L["Right-click to change or remove it."])
+			end,
+			click = RecipeClick(queued.recipeID),
+			menu = RecipeMenu(queued.recipeID),
+		})
+	end
+end
+
 -- One row under the route for what it leaves out by choice, so a skip is never silent: click or right-click
 -- it to bring a recipe back.
 ---@param list SkillUpList
@@ -516,6 +565,7 @@ local function RenderRoute(list, plan)
 	if blocked and profession.capped and #plan.ranks == 0 then
 		list:Message(blocked)
 		RenderPinned(list, plan)
+		RenderQueued(list, plan)
 		return
 	end
 	local currentCraft = plan.crafts[1]
@@ -581,7 +631,11 @@ local function RenderRoute(list, plan)
 			end
 			list:Add({
 				icon = RecipeIcon(craft.recipeID),
-				text = string.format(L["Craft %d× %s"], craft.crafts, RecipeName(craft.recipeID)),
+				text = string.format(
+					craft.fixed and L["Craft %d× %s (queued)"] or L["Craft %d× %s"],
+					craft.crafts,
+					RecipeName(craft.recipeID)
+				),
 				detail = detail,
 				color = ns.COLORS[craft.color],
 				current = current,
@@ -629,6 +683,7 @@ local function RenderRoute(list, plan)
 		list:Message(ns.RouteSparesNote(), ns.COLORS.unknown)
 	end
 	RenderPinned(list, plan)
+	RenderQueued(list, plan)
 	RenderSkipped(list, profession)
 end
 

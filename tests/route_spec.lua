@@ -317,6 +317,12 @@ page = {
 	SkippedRecipes = function()
 		return page.skipped or {}
 	end,
+	QueuedCount = function(id)
+		return page.queued and page.queued[id] or 0
+	end,
+	QueueCraft = function(id, count)
+		page.queueCraft = { id, count }
+	end,
 	SetSkipped = function(recipeID, skip)
 		page.setSkipped = { recipeID, skip }
 	end,
@@ -1347,6 +1353,48 @@ local craftMenu = MenuRoot()
 craftRow.menu(nil, craftMenu)
 equal(craftMenu.title, "Spell 3275", "a step's menu is titled with its recipe")
 equal(craftMenu.buttons[1].text, "Not this recipe", "and offers Not this recipe")
+equal(craftMenu.buttons[3].text, "Queue to craft", "and offers to queue it")
+craftMenu.buttons[3].action()
+equal(page.queueCraft[2], 1, "queueing an unqueued recipe queues one")
+page.queued = { [3275] = 2 }
+local queuedMenu = MenuRoot()
+craftRow.menu(nil, queuedMenu)
+equal(queuedMenu.buttons[3].text, "Queue one more", "a queued recipe offers one more")
+queuedMenu.buttons[3].action()
+equal(page.queueCraft[2], 3, "which adds one")
+equal(queuedMenu.buttons[4].text, "Remove from queue", "and removing it")
+queuedMenu.buttons[4].action()
+equal(page.queueCraft[2], 0, "which sets its count to nothing")
+page.queued = nil
+
+-- The queue is listed under the route, and a queued craft says so.
+skipCraft.fixed = true
+local planRoute = page.PlanRoute
+page.PlanRoute = function(profession)
+	local plan = planRoute(profession)
+	plan.queued = {
+		{ recipeID = 3275, count = 2, placed = true, at = 1, points = 4 },
+		{ recipeID = 3276, count = 1, placed = false, learnAt = 150, unpriced = true },
+	}
+	return plan
+end
+routeTab:Click()
+Drain()
+local queuedRows = {}
+for _, row in ipairs(lists[1].rows) do
+	if row.text then
+		queuedRows[row.text] = row.detail or ""
+	end
+end
+equal(queuedRows["Craft 5× Spell 3275 (queued)"] ~= nil, true, "a queued craft is marked on the route")
+equal(queuedRows["Queued: 2× Spell 3275"], "Made at 1, +4 skill", "the queue says where a recipe is made")
+equal(
+	queuedRows["Queued: 1× Spell 3276"],
+	"Learnable at 150, past where the route ends; price unknown",
+	"and why one is not"
+)
+page.PlanRoute = planRoute
+skipCraft.fixed = nil
 craftMenu.buttons[1].action()
 equal(page.setSkipped[1] == 3275 and page.setSkipped[2], true, "which skips that recipe")
 equal(craftMenu.buttons[2].text, "Pin for skill-ups", "a step offers pinning")
