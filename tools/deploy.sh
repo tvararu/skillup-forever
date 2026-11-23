@@ -24,6 +24,6 @@ if ssh "$HOST" "pgrep -f [W]ow.exe >/dev/null"; then
 	echo "WoW is running on $HOST: deploying anyway, /reload to pick it up" >&2
 fi
 stamp=$(date +%Y%m%d-%H%M%S)
-ssh "$HOST" "mkdir -p ~/skillup-forever-backups && tar -czf ~/skillup-forever-backups/SkillUpForever-$stamp.tar.gz -C \"$ADDONS\" SkillUpForever"
+ssh "$HOST" "mkdir -p ~/skillup-forever-backups && test ! -d \"$ADDONS/SkillUpForever\" || tar -czf ~/skillup-forever-backups/SkillUpForever-$stamp.tar.gz -C \"$ADDONS\" SkillUpForever"
 rsync -a --delete "$BUILD/" "$HOST:\"$ADDONS/SkillUpForever/\""
 echo "installed $version on $HOST (backup SkillUpForever-$stamp.tar.gz)"
