@@ -79,11 +79,7 @@ equal(favor[BELT] and not favor[BOOTS], true, "a source filter keeps that source
 local found = ns.FilterPatterns(entries, { search = "stormrider" })
 equal(#found, 9, "a search matches names, ignoring case")
 
-local set = ns.PatternSet(Leatherworking(70), BELT)
-equal(#set, 9, "the Stormrider's set is the nine Stormrider's recipes")
-equal(ns.PatternSet(Leatherworking(70), BOOTS), nil, "a recipe with no set name has no set")
-ns.QueueSet(Leatherworking(70), BELT)
-equal(#ns.QueuedCrafts(LEATHERWORKING), 9, "queueing a set queues one of each")
-equal(Find(ns.Patterns(Leatherworking(70)), GLOVES).queued, 1, "and the list shows what is queued")
+ns.QueueCraft(GLOVES, 1)
+equal(Find(ns.Patterns(Leatherworking(70)), GLOVES).queued, 1, "the list shows what is queued")
 
 Client.report("patterns_spec")

@@ -110,10 +110,6 @@ end
 ---@return fun()
 local function Click(profession, entry)
 	return function()
-		if IsShiftKeyDown() then
-			ns.QueueSet(profession, entry.recipeID)
-			return
-		end
 		chosen = entry.recipeID
 		Render()
 	end
@@ -132,12 +128,6 @@ local function Menu(profession, entry)
 		if queued > 0 then
 			root:CreateButton(L["Remove from queue"], function()
 				ns.QueueCraft(entry.recipeID, 0)
-			end)
-		end
-		local set = ns.PatternSet(profession, entry.recipeID)
-		if set then
-			root:CreateButton(string.format(L["Queue the set (%d)"], #set), function()
-				ns.QueueSet(profession, entry.recipeID)
 			end)
 		end
 	end

@@ -219,42 +219,6 @@ function ns.FilterPatterns(entries, filter)
 	return kept
 end
 
--- A set's name: the first word of a recipe named like "Stormrider's Leather Belt".
----@param name string
----@return string?
-local function SetName(name)
-	return name:match("^(%S+'s) ")
-end
-
--- The recipes of the profession sharing this one's set name, in learn order; nil for a recipe with none.
----@param profession SkillUpContext
----@param recipeID integer
----@return SkillUpPattern[]?
-function ns.PatternSet(profession, recipeID)
-	local setName = SetName(Name(recipeID))
-	if not setName then
-		return nil
-	end
-	local set = {}
-	for _, entry in ipairs(ns.Patterns(profession)) do
-		if SetName(entry.name) == setName then
-			set[#set + 1] = entry
-		end
-	end
-	return set
-end
-
--- Queues one of every recipe in this one's set that is not queued already.
----@param profession SkillUpContext
----@param recipeID integer
-function ns.QueueSet(profession, recipeID)
-	for _, entry in ipairs(ns.PatternSet(profession, recipeID) or {}) do
-		if ns.QueuedCount(entry.recipeID) == 0 then
-			ns.QueueCraft(entry.recipeID, 1)
-		end
-	end
-end
-
 -- The equipment slots an item of each inventory type goes in.
 local SLOTS = {
 	INVTYPE_HEAD = { 1 },

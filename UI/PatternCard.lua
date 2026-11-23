@@ -36,7 +36,6 @@ local BAND_NAMES = { "orange", "yellow", "green", "grey" }
 ---@field Queued FontString
 ---@field Add Button
 ---@field Remove Button
----@field Set Button
 ---@field profession SkillUpProfession?
 ---@field entry SkillUpPattern?
 
@@ -243,7 +242,16 @@ local function Render(card)
 	card.Cost:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -6)
 	anchor = card.Cost
 
-	local compare = CompareText(itemID)
+	local queued = ns.QueuedCount(entry.recipeID)
+	card.Queued:SetText(string.format(L["Queued: %d"], queued))
+	card.Remove:SetEnabled(queued > 0)
+
+	-- The comparison and the stats lean on Pawn and on item data this client may not have: a failure shows in
+	-- the card instead of stopping the rest of it.
+	local ok, compare = pcall(CompareText, itemID)
+	if not ok then
+		compare = RED_FONT_COLOR:WrapTextInColorCode(tostring(compare))
+	end
 	card.Compare:SetText(compare or "")
 	card.Compare:SetShown(compare ~= nil)
 	if compare then
@@ -253,24 +261,21 @@ local function Render(card)
 		anchor = card.Compare
 	end
 
-	if itemID and C_Item.DoesItemExistByID(itemID) then
-		local stats = card.Stats
-		stats:SetOwner(card, "ANCHOR_NONE")
-		stats:ClearAllPoints()
-		stats:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -8)
-		stats:SetItemByID(itemID)
-		stats:SetFrameStrata(card:GetFrameStrata())
-		stats:SetFrameLevel(card:GetFrameLevel() + 20)
-		stats:Show()
-	end
-
-	local queued = ns.QueuedCount(entry.recipeID)
-	card.Queued:SetText(string.format(L["Queued: %d"], queued))
-	card.Remove:SetEnabled(queued > 0)
-	local set = ns.PatternSet(profession, entry.recipeID)
-	card.Set:SetShown(set ~= nil)
-	if set then
-		card.Set:SetText(string.format(L["Queue the set (%d)"], #set))
+	if itemID then
+		local shown, problem = pcall(function()
+			local stats = card.Stats
+			stats:SetOwner(card, "ANCHOR_NONE")
+			stats:ClearAllPoints()
+			stats:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -4, -8)
+			stats:SetItemByID(itemID)
+			stats:SetFrameStrata(card:GetFrameStrata())
+			stats:SetFrameLevel(card:GetFrameLevel() + 20)
+			stats:Show()
+		end)
+		if not shown then
+			card.Compare:SetText((compare and compare .. "\n" or "") .. RED_FONT_COLOR:WrapTextInColorCode(tostring(problem)))
+			card.Compare:Show()
+		end
 	end
 end
 
@@ -307,6 +312,18 @@ function ns.CreatePatternCard(parent)
 	card.Name = Label(body, "GameFontNormalLarge")
 	card.Name:SetPoint("TOPLEFT", card.Icon, "TOPRIGHT", 8, -2)
 	card.Name:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
+	local header = CreateFrame("Button", nil, body)
+	header:SetPoint("TOPLEFT", card.Icon, "TOPLEFT")
+	header:SetPoint("BOTTOMRIGHT", card.Name, "BOTTOMRIGHT", 0, -16)
+	header:SetScript("OnEnter", function(self)
+		local itemID = card.entry and card.entry.itemID
+		if itemID then
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetItemByID(itemID)
+			GameTooltip:Show()
+		end
+	end)
+	header:SetScript("OnLeave", GameTooltip_Hide)
 	card.Source = Label(body, "GameFontHighlightSmall")
 	card.Source:SetPoint("TOPLEFT", card.Name, "BOTTOMLEFT", 0, -4)
 	card.Source:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
@@ -338,13 +355,7 @@ function ns.CreatePatternCard(parent)
 		Change(-1)
 	end)
 	card.Remove:SetPoint("LEFT", card.Add, "RIGHT", 6, 0)
-	card.Set = ActionButton(L["Queue the set (%d)"], body, function()
-		if card.profession and card.entry then
-			ns.QueueSet(card.profession, card.entry.recipeID)
-		end
-	end)
-	card.Set:SetPoint("LEFT", card.Remove, "RIGHT", 6, 0)
-	for _, button in ipairs({ card.Add, card.Remove, card.Set }) do
+	for _, button in ipairs({ card.Add, card.Remove }) do
 		button:SetFrameLevel(card:GetFrameLevel() + 40)
 	end
 	card.Queued = Label(body, "GameFontHighlight")
