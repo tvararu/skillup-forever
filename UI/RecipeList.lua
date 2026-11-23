@@ -650,6 +650,9 @@ function ns.AttachRecipeList()
 	end)
 	ns.AttachRoute()
 	ns.AttachGear()
+	if ns.AttachPatterns then
+		ns.AttachPatterns()
+	end
 	if ns.AttachBuffs then
 		ns.AttachBuffs()
 	end
