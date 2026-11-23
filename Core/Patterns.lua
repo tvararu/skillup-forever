@@ -72,6 +72,20 @@ local function Name(recipeID)
 	return bundledNames[recipeID] or C_Spell.GetSpellName(recipeID) or string.format(L["recipe %d"], recipeID)
 end
 
+-- Where a recipe nothing places is learnt: its orange start when the data has a real one, else as far below
+-- yellow as grey is above it, a guess that matches trainer recipes.
+---@param recipeID integer
+---@return number
+local function BandedLearnSkill(recipeID)
+	local t = ns.Model.Get(recipeID)
+	if not t then
+		return 1
+	elseif t[1] > 1 then
+		return t[1]
+	end
+	return math.max(1, 2 * t[2] - t[4])
+end
+
 ---@param profession SkillUpContext
 ---@param recipeID integer
 ---@param data table
@@ -106,13 +120,13 @@ function ns.Patterns(profession)
 	local entries = {}
 	local sources = ns.PatternSources or {}
 	for recipeID, recipe in pairs(ns.RecipeData) do
-		if recipe.skillLine == profession.skillLine then
-			local data = sources[recipeID] or {}
+		local data = sources[recipeID] or {}
+		if recipe.skillLine == profession.skillLine and not data.gone then
 			local scrollData = ns.RecipeScrolls and ns.RecipeScrolls[recipeID]
 			local scroll = scrollData and scrollData[1] or nil
 			local learnAt = ns.LearnSkill(profession, recipeID) - profession.modifier
 			if learnAt <= 0 then
-				learnAt = data.train or 1
+				learnAt = data.train or BandedLearnSkill(recipeID)
 			end
 			local rep = data.rep
 			local repMet = true

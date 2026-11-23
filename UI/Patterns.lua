@@ -105,7 +105,7 @@ end
 ---@return fun(tooltip: GameTooltip)
 local function Tooltip(profession, entry)
 	return function(tooltip)
-		if entry.itemID then
+		if entry.itemID and C_Item.DoesItemExistByID(entry.itemID) then
 			tooltip:SetItemByID(entry.itemID)
 			GameTooltip_AddBlankLineToTooltip(tooltip)
 		else

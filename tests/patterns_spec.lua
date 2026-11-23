@@ -44,7 +44,9 @@ equal(#entries > 100, true, "every Leatherworking recipe is listed")
 for index = 2, #entries do
 	assert(entries[index - 1].skill <= entries[index].skill, "the list is in learn-skill order")
 end
-local boots, belt, gloves, jerkin = Find(entries, BOOTS), Find(entries, BELT), Find(entries, GLOVES), Find(entries, JERKIN)
+equal(Find(entries, 28474), nil, "a recipe Forever retired is left out")
+equal(Find(entries, 22815).skill, 275, "a recipe nothing places is learnt where its bands say, not at 1")
+local boots, belt, gloves, jerkin =Find(entries, BOOTS), Find(entries, BELT), Find(entries, GLOVES), Find(entries, JERKIN)
 equal(boots.state, "known", "a learned recipe is known")
 equal(boots.source, "basic", "one taught with the profession is basic")
 equal(Find(entries, PANTS).source, "trainer", "a trainer's recipe says so")
